@@ -14,7 +14,6 @@
    lectures/01_lecture/examples/02_threading/01_simple_thread.py
    lectures/01_lecture/examples/02_threading/02_thread_pool.py
 """
-
 from typing import Callable
 
 
@@ -61,8 +60,10 @@ def fetch_all(urls: list[str], max_workers: int = 4) -> list[str]:
         >>> fetch_all(["a", "b", "c"], max_workers=2)
         ['data:a', 'data:b', 'data:c']
     """
-    # TODO: реализуйте
-    raise NotImplementedError
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        results = pool.map(fetch_one, urls)
+    return list(results)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -85,8 +86,14 @@ def fetch_all_with_errors(urls: list[str], max_workers: int = 4) -> list[str | N
         - Для "bad" URL вернуть None
         - Для остальных — результат fetch_one()
     """
-    # TODO: реализуйте
-    raise NotImplementedError
+
+    def fetch_one_except_bad(url: str) -> str | None:
+        return None if "bad" in url else fetch_one(url)
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        results = pool.map(fetch_one_except_bad, urls)
+    return list(results)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -123,5 +130,17 @@ def fetch_all_with_progress(
         )
         # completed[-1] == 3
     """
-    # TODO: реализуйте
-    raise NotImplementedError
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future2url = {pool.submit(fetch_one, u): u for u in urls}
+        url_res = dict()
+        for future in as_completed(future2url):
+            try:
+                url_res[future2url[future]] = future.result()
+            except Exception as exc:
+                url_res[future2url[future]] = None
+            finally:
+                if progress_callback:
+                    progress_callback(len(url_res), len(urls))
+        return [url_res[u] for u in urls]
