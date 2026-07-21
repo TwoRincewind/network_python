@@ -20,8 +20,9 @@
 Задача Б: Написать тесты в test_errors.py
     Покрыть все эндпоинты.
 """
+import asyncio
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -45,21 +46,25 @@ class ItemUpdate(BaseModel):
 # ═══════════════════════════════════════════════════════════
 
 
-@app.get("/items")
+@app.get("/items", status_code=200)
 def list_items():
     return {"items": list(ITEMS.values())}
 
 
-@app.get("/items/{item_id}")
+@app.get("/items/{item_id}", status_code=200)
 def get_item(item_id: int):
-    # TODO:
-    raise NotImplementedError
+    try:
+        return ITEMS[item_id]
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Item not found")
 
 
 @app.post("/items", status_code=201)
 def create_item(item: ItemCreate):
-    # TODO:
-    raise NotImplementedError
+    global NEXT_ID
+    ITEMS[NEXT_ID] = {"id": NEXT_ID} | item.model_dump()
+    NEXT_ID += 1
+    return ITEMS[NEXT_ID - 1]
 
 
 @app.get("/items/{item_id}/counter")
@@ -70,25 +75,31 @@ def get_counter(item_id: int):
     return {"counter": COUNTER}
 
 
-@app.put("/items/{item_id}")
+@app.put("/items/{item_id}", status_code=200)
 def update_item(item_id: int, update: ItemUpdate):
-    # TODO:
-    raise NotImplementedError
+    if item_id not in ITEMS:
+        raise HTTPException(status_code=404, detail="Item not found")
+    ITEMS[item_id] = {"id": item_id} | update.model_dump()
+    return ITEMS[item_id]
 
 
-@app.delete("/items/{item_id}")
+@app.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int):
-    # TODO:
-    raise NotImplementedError
+    try:
+        ITEMS.pop(item_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Item not found")
 
 
 @app.get("/divide")
 def divide(a: int, b: int):
-    # TODO:
-    raise NotImplementedError
+    try:
+        return {"result": a / b}
+    except ZeroDivisionError:
+        raise HTTPException(status_code=400, detail="Divide by zero")
 
 
 @app.get("/slow-sync")
 async def slow_sync():
-    # TODO:
-    raise NotImplementedError
+    await asyncio.sleep(1)
+    return {"status": "done"}
