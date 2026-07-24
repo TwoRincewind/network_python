@@ -73,8 +73,8 @@ COUNTER_LOCK = threading.Lock()
 def get_counter(item_id: int):
     if item_id not in ITEMS:
         raise HTTPException(404, detail="Item not found")
+    global COUNTER
     with COUNTER_LOCK:
-        global COUNTER
         COUNTER += 1
         return {"counter": COUNTER}
 
