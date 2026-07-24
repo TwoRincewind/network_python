@@ -21,6 +21,7 @@
     Покрыть все эндпоинты.
 """
 import asyncio
+import threading
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -67,12 +68,15 @@ def create_item(item: ItemCreate):
     return ITEMS[NEXT_ID - 1]
 
 
+COUNTER_LOCK = threading.Lock()
 @app.get("/items/{item_id}/counter")
 def get_counter(item_id: int):
-    # TODO:
-    global COUNTER
-    COUNTER += 1
-    return {"counter": COUNTER}
+    if item_id not in ITEMS:
+        raise HTTPException(404, detail="Item not found")
+    with COUNTER_LOCK:
+        global COUNTER
+        COUNTER += 1
+        return {"counter": COUNTER}
 
 
 @app.put("/items/{item_id}", status_code=200)
@@ -101,5 +105,5 @@ def divide(a: int, b: int):
 
 @app.get("/slow-sync")
 async def slow_sync():
-    await asyncio.sleep(1)
+    await asyncio.sleep(0.5)
     return {"status": "done"}
