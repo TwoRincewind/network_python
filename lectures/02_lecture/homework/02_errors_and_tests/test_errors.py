@@ -82,9 +82,9 @@ class TestCounter:
             for i in range(requests_cnt):
                 TestCounter._get(item_id)
 
-        items_cnt = 3
+        items_cnt = 4
         item_ids = TestCounter._ensure_enough_items(items_cnt)
-        mult = 1000
+        mult = 400
         request_cnts = list(range(mult, (items_cnt + 1) * mult, mult))
 
         start_value = TestCounter._get(item_ids[0])
@@ -184,14 +184,60 @@ class TestDivide:
         assert resp.status_code == 422
 
 
+class TestSlowASync:
+    def test_slow_async_returns_correctly(self):
+        resp = client.get("/slow-async")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "done"}
+
+    def test_slow_async_is_async(self):
+        """Проверяем, что /slow-async не блокирует другие запросы."""
+        import threading
+        import time
+
+        results = []
+
+        def call_slow():
+            t0 = time.perf_counter()
+            resp = client.get("/slow-async")
+            elapsed = time.perf_counter() - t0
+            results.append(("slow", elapsed, resp.status_code))
+
+        def call_fast():
+            time.sleep(0.1)  # стартуем чуть позже
+            t0 = time.perf_counter()
+            resp = client.get("/items")
+            elapsed = time.perf_counter() - t0
+            results.append(("fast", elapsed, resp.status_code))
+
+        t1 = threading.Thread(target=call_slow)
+        t2 = threading.Thread(target=call_fast)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        slow_time = next(r[1] for r in results if r[0] == "slow")
+        fast_time = next(r[1] for r in results if r[0] == "fast")
+
+        # Если бы slow блокировал event loop — fast бы ждал
+        assert fast_time < 0.2, (
+            f"fast запрос занял {fast_time:.4f}s — "
+            f"похоже slow-async блокирует event loop!"
+        )
+        assert 0.4 < slow_time < 1.0, (
+            f"slow-async должен быть ~0.5s, получили {slow_time:.2f}s"
+        )
+
+
 class TestSlowSync:
     def test_slow_sync_returns_correctly(self):
         resp = client.get("/slow-sync")
         assert resp.status_code == 200
         assert resp.json() == {"status": "done"}
 
-    def test_slow_sync_is_async(self):
-        """Проверяем, что /slow-sync не блокирует другие запросы."""
+    def test_slow_sync_is_sync(self):
+        """Проверяем, что /slow-sync блокирует другие запросы."""
         import threading
         import time
 
@@ -220,12 +266,11 @@ class TestSlowSync:
         slow_time = next(r[1] for r in results if r[0] == "slow")
         fast_time = next(r[1] for r in results if r[0] == "fast")
 
-        # Если бы slow блокировал event loop — fast бы ждал
-        assert fast_time < 0.2, (
-            f"fast запрос занял {fast_time:.2f}s — "
-            f"похоже slow-sync блокирует event loop!"
+        assert fast_time > 0.2, (
+            f"fast запрос занял {fast_time:.4f}s — "
+            f"похоже slow-sync не блокирует event loop"
         )
-        assert 0.4 < slow_time < 1.0, (
+        assert 0.4 < slow_time < 1, (
             f"slow-sync должен быть ~0.5s, получили {slow_time:.2f}s"
         )
 

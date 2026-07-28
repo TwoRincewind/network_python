@@ -69,6 +69,8 @@ def create_item(item: ItemCreate):
 
 
 COUNTER_LOCK = threading.Lock()
+
+
 @app.get("/items/{item_id}/counter")
 def get_counter(item_id: int):
     if item_id not in ITEMS:
@@ -104,6 +106,16 @@ def divide(a: int, b: int):
 
 
 @app.get("/slow-sync")
-async def slow_sync():
+def slow_sync():
+    from time import perf_counter, sleep
+    t0 = perf_counter()
+    # time.sleep(0.5)
+    while perf_counter() - t0 < 0.5:
+        t0 = t0
+    return {"status": "done"}
+
+
+@app.get("/slow-async")
+async def slow_async():
     await asyncio.sleep(0.5)
     return {"status": "done"}
