@@ -20,12 +20,10 @@
 Задача Б: Написать тесты в test_errors.py
     Покрыть все эндпоинты.
 """
-import asyncio
-import threading
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from threading import Lock
 
 app = FastAPI()
 
@@ -68,7 +66,7 @@ def create_item(item: ItemCreate):
     return ITEMS[NEXT_ID - 1]
 
 
-COUNTER_LOCK = threading.Lock()
+COUNTER_LOCK = Lock()
 
 
 @app.get("/items/{item_id}/counter")
@@ -91,25 +89,23 @@ def update_item(item_id: int, update: ItemUpdate):
 
 @app.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int):
-    try:
-        ITEMS.pop(item_id)
-    except KeyError:
+    if item_id not in ITEMS:
         raise HTTPException(status_code=404, detail="Item not found")
+    ITEMS.pop(item_id)
 
 
 @app.get("/divide")
 def divide(a: int, b: int):
-    try:
-        return {"result": a / b}
-    except ZeroDivisionError:
+    if b == 0:
         raise HTTPException(status_code=400, detail="Divide by zero")
+    return {"result": a / b}
 
 
 @app.get("/slow-sync")
 def slow_sync():
-    from time import perf_counter, sleep
+    from time import perf_counter #, sleep
+    # sleep(0.5)
     t0 = perf_counter()
-    # time.sleep(0.5)
     while perf_counter() - t0 < 0.5:
         t0 = t0
     return {"status": "done"}
@@ -117,5 +113,6 @@ def slow_sync():
 
 @app.get("/slow-async")
 async def slow_async():
-    await asyncio.sleep(0.5)
+    from asyncio import sleep
+    await sleep(0.5)
     return {"status": "done"}

@@ -45,7 +45,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
-
 # ═══════════════════════════════════════════════════════════
 # МОДЕЛИ
 # ═══════════════════════════════════════════════════════════
@@ -98,16 +97,14 @@ class BookNotFoundException(HTTPException):
     """404 — книга не найдена."""
 
     def __init__(self):
-        super().__init__(status_code=404,
-                         detail={"detail": "Book not found", "code": "NOT_FOUND"})
+        super().__init__(status_code=404, detail={"detail": "Book not found", "code": "NOT_FOUND"})
 
 
 class DuplicateIsbnException(HTTPException):
     """409 — ISBN уже существует."""
 
     def __init__(self):
-        super().__init__(status_code=409,
-                         detail={"detail": "...", "code": "DUPLICATE_ISBN"})
+        super().__init__(status_code=409, detail={"detail": "...", "code": "DUPLICATE_ISBN"})
 
 
 # ═══════════════════════════════════════════════════════════
@@ -129,7 +126,7 @@ def duplicate_isbn_exception_handler(request: Request, exc: DuplicateIsbnExcepti
 
 # Хранилище
 BOOKS: dict[int, Book] = {}
-BOOKS_COUNTER = 0
+NEXT_ID = 0
 ISBNS: set[str] = set()
 CATEGORIES: list[Category] = []
 
@@ -191,10 +188,10 @@ def create_book(book: BookCreate):
     if book.isbn in ISBNS:
         raise DuplicateIsbnException()
     ISBNS.add(book.isbn)
-    global BOOKS_COUNTER
-    BOOKS_COUNTER += 1
-    BOOKS[BOOKS_COUNTER] = Book(id=BOOKS_COUNTER, **book.model_dump())
-    return BOOKS[BOOKS_COUNTER]
+    global NEXT_ID
+    NEXT_ID += 1
+    BOOKS[NEXT_ID] = Book(id=NEXT_ID, **book.model_dump())
+    return BOOKS[NEXT_ID]
 
 
 @app.put("/books/{book_id}")
