@@ -40,7 +40,7 @@
     7. Фильтрация GET /books?category_id=N&year=2024
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
@@ -71,7 +71,7 @@ class Book(BaseModel):
     id: int
     title: str = Field(min_length=1, max_length=100)
     author: str = Field(min_length=1, max_length=100)
-    year: int = Field(ge=1900, le=2025)
+    year: int = Field(ge=1800, le=2025)
     isbn: str
     price: float = Field(gt=0)
     category_id: Optional[int] = None
@@ -82,7 +82,7 @@ class BookCreate(BaseModel):
 
     title: str = Field(min_length=1, max_length=100)
     author: str = Field(min_length=1, max_length=100)
-    year: int = Field(ge=1900, le=2025)
+    year: int = Field(ge=1800, le=2025)
     isbn: str
     price: float = Field(gt=0)
     category_id: Optional[int] = None
@@ -96,13 +96,15 @@ class BookCreate(BaseModel):
 class BookNotFoundException(HTTPException):
     """404 — книга не найдена."""
 
-    # TODO: реализуйте
+    def __init__(self):
+        super().__init__(status_code=404, detail={"detail": "Book not found", "code": "NOT_FOUND"})
 
 
 class DuplicateIsbnException(HTTPException):
     """409 — ISBN уже существует."""
 
-    # TODO: реализуйте
+    def __init__(self):
+        super().__init__(status_code=409, detail={"detail": "...", "code": "DUPLICATE_ISBN"})
 
 
 # ═══════════════════════════════════════════════════════════
@@ -111,9 +113,22 @@ class DuplicateIsbnException(HTTPException):
 
 app = FastAPI(title="Bookstore API")
 
+
+@app.exception_handler(BookNotFoundException)
+def book_not_found_exception_handler(request: Request, exc: BookNotFoundException):
+    return JSONResponse(status_code=exc.status_code, content=exc.detail)
+
+
+@app.exception_handler(DuplicateIsbnException)
+def duplicate_isbn_exception_handler(request: Request, exc: DuplicateIsbnException):
+    return JSONResponse(status_code=exc.status_code, content=exc.detail)
+
+
 # Хранилище
-BOOKS: list[dict] = []
-CATEGORIES: list[dict] = []
+BOOKS: dict[int, Book] = {}
+NEXT_ID = 0
+ISBNS: set[str] = set()
+CATEGORIES: list[Category] = []
 
 
 # ═══════════════════════════════════════════════════════════
@@ -124,15 +139,14 @@ CATEGORIES: list[dict] = []
 @app.get("/categories")
 def list_categories():
     """GET /categories — список всех категорий."""
-    # TODO: реализуйте
-    raise NotImplementedError
+    return CATEGORIES  # [Category(**e) for e in CATEGORIES]
 
 
 @app.post("/categories", status_code=201)
 def create_category(category: CategoryCreate):
     """POST /categories — создать категорию."""
-    # TODO: реализуйте
-    raise NotImplementedError
+    CATEGORIES.append(Category(id=len(CATEGORIES), name=category.name))
+    return CATEGORIES[-1]
 
 
 # ═══════════════════════════════════════════════════════════
@@ -143,22 +157,26 @@ def create_category(category: CategoryCreate):
 @app.get("/books")
 def list_books(category_id: Optional[int] = None, year: Optional[int] = None):
     """GET /books — список книг. Опциональная фильтрация по category_id и year."""
-    # TODO: реализуйте
-    raise NotImplementedError
+
+    def check(book: Book) -> bool:
+        return category_id in [None, book.category_id] and year in [None, book.year]
+
+    return list(filter(check, BOOKS.values()))
 
 
 @app.get("/books/search")
 def search_books(query: str):
     """GET /books/search?query=... — поиск по title и author (case-insensitive)."""
-    # TODO: реализуйте
-    raise NotImplementedError
+    return [book for book in BOOKS.values() if query.lower() in book.title.lower() + chr(0) + book.author.lower()]
 
 
 @app.get("/books/{book_id}")
 def get_book(book_id: int):
     """GET /books/{id} — одна книга."""
-    # TODO: реализуйте
-    raise NotImplementedError
+    try:
+        return BOOKS[book_id]
+    except KeyError:
+        raise BookNotFoundException
 
 
 @app.post("/books", status_code=201)
@@ -167,19 +185,31 @@ def create_book(book: BookCreate):
 
     Проверять уникальность ISBN. Если дубликат — DuplicateIsbnException.
     """
-    # TODO: реализуйте
-    raise NotImplementedError
+    if book.isbn in ISBNS:
+        raise DuplicateIsbnException()
+    ISBNS.add(book.isbn)
+    global NEXT_ID
+    NEXT_ID += 1
+    BOOKS[NEXT_ID] = Book(id=NEXT_ID, **book.model_dump())
+    return BOOKS[NEXT_ID]
 
 
 @app.put("/books/{book_id}")
 def update_book(book_id: int, book: BookCreate):
     """PUT /books/{id} — полностью обновить книгу."""
-    # TODO: реализуйте
-    raise NotImplementedError
+    try:
+        if book.isbn != BOOKS[book_id].isbn and book.isbn in ISBNS:
+            raise DuplicateIsbnException()
+        BOOKS[book_id] = Book(id=book_id, **book.model_dump())
+        return BOOKS[book_id]
+    except KeyError:
+        raise BookNotFoundException()
 
 
 @app.delete("/books/{book_id}", status_code=204)
 def delete_book(book_id: int):
     """DELETE /books/{id} — удалить книгу."""
-    # TODO: реализуйте
-    raise NotImplementedError
+    try:
+        BOOKS.pop(book_id)
+    except KeyError:
+        raise BookNotFoundException()

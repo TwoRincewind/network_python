@@ -21,9 +21,9 @@
     Покрыть все эндпоинты.
 """
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from threading import Lock
 
 app = FastAPI()
 
@@ -45,50 +45,74 @@ class ItemUpdate(BaseModel):
 # ═══════════════════════════════════════════════════════════
 
 
-@app.get("/items")
+@app.get("/items", status_code=200)
 def list_items():
     return {"items": list(ITEMS.values())}
 
 
-@app.get("/items/{item_id}")
+@app.get("/items/{item_id}", status_code=200)
 def get_item(item_id: int):
-    # TODO:
-    raise NotImplementedError
+    try:
+        return ITEMS[item_id]
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Item not found")
 
 
 @app.post("/items", status_code=201)
 def create_item(item: ItemCreate):
-    # TODO:
-    raise NotImplementedError
+    global NEXT_ID
+    ITEMS[NEXT_ID] = {"id": NEXT_ID} | item.model_dump()
+    NEXT_ID += 1
+    return ITEMS[NEXT_ID - 1]
+
+
+COUNTER_LOCK = Lock()
 
 
 @app.get("/items/{item_id}/counter")
 def get_counter(item_id: int):
-    # TODO:
+    if item_id not in ITEMS:
+        raise HTTPException(404, detail="Item not found")
     global COUNTER
-    COUNTER += 1
-    return {"counter": COUNTER}
+    with COUNTER_LOCK:
+        COUNTER += 1
+        return {"counter": COUNTER}
 
 
-@app.put("/items/{item_id}")
+@app.put("/items/{item_id}", status_code=200)
 def update_item(item_id: int, update: ItemUpdate):
-    # TODO:
-    raise NotImplementedError
+    if item_id not in ITEMS:
+        raise HTTPException(status_code=404, detail="Item not found")
+    ITEMS[item_id] = {"id": item_id} | update.model_dump()
+    return ITEMS[item_id]
 
 
-@app.delete("/items/{item_id}")
+@app.delete("/items/{item_id}", status_code=204)
 def delete_item(item_id: int):
-    # TODO:
-    raise NotImplementedError
+    if item_id not in ITEMS:
+        raise HTTPException(status_code=404, detail="Item not found")
+    ITEMS.pop(item_id)
 
 
 @app.get("/divide")
 def divide(a: int, b: int):
-    # TODO:
-    raise NotImplementedError
+    if b == 0:
+        raise HTTPException(status_code=400, detail="Divide by zero")
+    return {"result": a / b}
 
 
 @app.get("/slow-sync")
-async def slow_sync():
-    # TODO:
-    raise NotImplementedError
+def slow_sync():
+    from time import perf_counter #, sleep
+    # sleep(0.5)
+    t0 = perf_counter()
+    while perf_counter() - t0 < 0.5:
+        t0 = t0
+    return {"status": "done"}
+
+
+@app.get("/slow-async")
+async def slow_async():
+    from asyncio import sleep
+    await sleep(0.5)
+    return {"status": "done"}

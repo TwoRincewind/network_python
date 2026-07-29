@@ -1,13 +1,15 @@
 """Тесты к ДЗ 2: Error handling и тестирование."""
-
 import sys
 import os
+from string import ascii_letters as letters
+from random import choice
+from threading import Thread
 
 sys.path.insert(0, os.path.dirname(__file__))
 
 from starlette.testclient import TestClient
 
-from solution import app
+from task import app
 
 client = TestClient(app)
 
@@ -48,6 +50,65 @@ class TestGetItem:
     def test_content_type(self):
         resp = client.get("/items/1")
         assert "application/json" in resp.headers["content-type"]
+
+
+class TestGetItems:
+    def test_get_all(self):
+        names = "Alpha_Beta gamma_Delta".split('_')
+        for name in names:
+            client.post("/items", json={"name": name})
+        resp = client.get("/items")
+        assert resp.status_code == 200
+        assert "items" in resp.json()
+        assert isinstance(resp.json()["items"], list)
+        items_names = [item["name"] for item in resp.json()["items"]]
+        assert all(name in items_names for name in names)
+
+
+class TestCounter:
+    def test_checks_item(self):
+        assert client.get("/items/42/counter").status_code == 404
+
+    def test_increases(self):
+        item_id = TestCounter._ensure_enough_items(1)[0]
+        start_value = TestCounter._get(item_id)
+        for i in range(start_value + 1, start_value + 10):
+            assert TestCounter._get(item_id) == i
+
+    def test_race_condition(self):
+        """straight bullshit because server processes one at a time"""
+
+        def work(item_id: int, requests_cnt: int):
+            for i in range(requests_cnt):
+                TestCounter._get(item_id)
+
+        items_cnt = 4
+        item_ids = TestCounter._ensure_enough_items(items_cnt)
+        mult = 400
+        request_cnts = list(range(mult, (items_cnt + 1) * mult, mult))
+
+        start_value = TestCounter._get(item_ids[0])
+        ts = [Thread(target=work, args=args) for args in zip(item_ids, request_cnts)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        finish_value = TestCounter._get(item_ids[0])
+        assert finish_value - start_value == sum(request_cnts) + 1
+
+    @staticmethod
+    def _get(item_id: int) -> int:
+        return client.get(f"/items/{item_id}/counter").json()["counter"]
+
+    @staticmethod
+    def _ensure_enough_items(items_needed: int) -> list[int]:
+        resp = client.get("/items")
+        assert resp.status_code == 200
+        item_ids = [item["id"] for item in resp.json()["items"]]
+        for i in range(len(item_ids), items_needed):
+            item = {"name": ''.join(choice(letters) for _ in range(10))}
+            item_ids.append(client.post("/items", json=item).json()["id"])
+        return item_ids
 
 
 class TestUpdateItem:
@@ -123,14 +184,60 @@ class TestDivide:
         assert resp.status_code == 422
 
 
+class TestSlowASync:
+    def test_slow_async_returns_correctly(self):
+        resp = client.get("/slow-async")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "done"}
+
+    def test_slow_async_is_async(self):
+        """Проверяем, что /slow-async не блокирует другие запросы."""
+        import threading
+        import time
+
+        results = []
+
+        def call_slow():
+            t0 = time.perf_counter()
+            resp = client.get("/slow-async")
+            elapsed = time.perf_counter() - t0
+            results.append(("slow", elapsed, resp.status_code))
+
+        def call_fast():
+            time.sleep(0.1)  # стартуем чуть позже
+            t0 = time.perf_counter()
+            resp = client.get("/items")
+            elapsed = time.perf_counter() - t0
+            results.append(("fast", elapsed, resp.status_code))
+
+        t1 = threading.Thread(target=call_slow)
+        t2 = threading.Thread(target=call_fast)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        slow_time = next(r[1] for r in results if r[0] == "slow")
+        fast_time = next(r[1] for r in results if r[0] == "fast")
+
+        # Если бы slow блокировал event loop — fast бы ждал
+        assert fast_time < 0.2, (
+            f"fast запрос занял {fast_time:.4f}s — "
+            f"похоже slow-async блокирует event loop!"
+        )
+        assert 0.4 < slow_time < 1.0, (
+            f"slow-async должен быть ~0.5s, получили {slow_time:.2f}s"
+        )
+
+
 class TestSlowSync:
     def test_slow_sync_returns_correctly(self):
         resp = client.get("/slow-sync")
         assert resp.status_code == 200
         assert resp.json() == {"status": "done"}
 
-    def test_slow_sync_is_async(self):
-        """Проверяем, что /slow-sync не блокирует другие запросы."""
+    def test_slow_sync_is_sync(self):
+        """Проверяем, что /slow-sync блокирует другие запросы."""
         import threading
         import time
 
@@ -159,12 +266,11 @@ class TestSlowSync:
         slow_time = next(r[1] for r in results if r[0] == "slow")
         fast_time = next(r[1] for r in results if r[0] == "fast")
 
-        # Если бы slow блокировал event loop — fast бы ждал
-        assert fast_time < 0.2, (
-            f"fast запрос занял {fast_time:.2f}s — "
-            f"похоже slow-sync блокирует event loop!"
+        assert fast_time > 0.2, (
+            f"fast запрос занял {fast_time:.4f}s — "
+            f"похоже slow-sync не блокирует event loop"
         )
-        assert 0.4 < slow_time < 1.0, (
+        assert 0.4 < slow_time < 1, (
             f"slow-sync должен быть ~0.5s, получили {slow_time:.2f}s"
         )
 
